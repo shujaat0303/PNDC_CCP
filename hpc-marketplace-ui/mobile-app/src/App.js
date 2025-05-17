@@ -31,16 +31,31 @@ export default function App() {
   useEffect(() => {
     if (view !== 'jobs') return;
     const fetchJobs = async () => {
+      // 1) Always refresh provider status
+      let info;
       try {
-        const openJobs = await get(`/providers/${provId}/requests`);
-        setJobs(openJobs);
-        setErrorMsg('');
-      } catch (_e) {
-        // fetch status if unavailable
-        const info = await get(`/providers/${provId}/status`);
+        info = await get(`/providers/${provId}/status`);
         setStatusInfo(info);
+      } catch {
+        setErrorMsg('Error fetching provider status.');
         setJobs([]);
-        if (!info.available && info.current_job) {
+        return;
+      }
+
+      // 2) If available, fetch open jobs; otherwise clear jobs
+      if (info.available) {
+        try {
+          const openJobs = await get(`/providers/${provId}/requests`);
+          setJobs(openJobs);
+          setErrorMsg('');
+        } catch {
+          setErrorMsg('Error fetching jobs.');
+          setJobs([]);
+        }
+      } else {
+        // provider busy
+        setJobs([]);
+        if (info.current_job) {
           setErrorMsg(
             `Busy with Job #${info.current_job.request_id} for Client ${info.current_job.client_id}.`
           );
@@ -49,6 +64,7 @@ export default function App() {
         }
       }
     };
+
     fetchJobs();
     const iv = setInterval(fetchJobs, 5000);
     return () => clearInterval(iv);

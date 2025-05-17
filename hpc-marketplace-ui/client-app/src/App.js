@@ -106,7 +106,7 @@ export default function App() {
     const rid = bid.request_id || reqId;
     await post(`/clients/${clientId}/requests/${rid}/bids/${bid.id}/accept`, {});
     clearAllData();
-    setView(returnView);
+    setView('status');
   };
 
   return (
