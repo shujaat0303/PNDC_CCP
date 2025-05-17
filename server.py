@@ -81,8 +81,11 @@ def list_requests(pid):
     if not prov.available:
         abort(400, 'Provider is currently unavailable')
 
-    # only OPEN requests whose specs are <= provider's specs
-    open_reqs = CodeRequest.query.filter_by(status='OPEN').all()
+    # allow both OPEN and BIDDING so multiple providers can bid
+    open_reqs = CodeRequest.query.filter(
+        CodeRequest.status.in_(['OPEN', 'BIDDING'])
+    ).all()
+    
     filtered = []
     for r in open_reqs:
         if (r.cores    <= prov.cores and
@@ -105,7 +108,7 @@ def list_requests(pid):
 def submit_bid(pid, rid):
     prov = HPCProvider.query.get_or_404(pid)
     req = CodeRequest.query.get_or_404(rid)
-    if req.status != 'OPEN':
+    if req.status != 'OPEN' and req.status != 'BIDDING':
         abort(400, 'Request not open for bidding')
     price = request.json.get('price')
     bid = Bid(request_id=rid, provider_id=pid, price=price)
@@ -208,6 +211,31 @@ def provider_logout(pid):
     prov.available = False
     db.session.commit()
     return jsonify(message='Provider logged out and unavailable')
+
+# ---- Provider: get current availability & job ----
+@app.route('/providers/<int:pid>/status', methods=['GET'])
+def provider_status(pid):
+    prov = HPCProvider.query.get_or_404(pid)
+
+    # find the one request they've won & is SCHEDULED:
+    bid = Bid.query.filter_by(provider_id=pid, accepted=True).first()
+    current_job = None
+    if bid:
+        req = CodeRequest.query.get(bid.request_id)
+        if req and req.status == 'SCHEDULED':
+            current_job = {
+                'request_id': req.id,
+                'client_id': req.client_id,
+                'cores': req.cores,
+                'clock_speed': req.clock_speed,
+                'memory': req.memory
+            }
+
+    return jsonify({
+        'provider_id': pid,
+        'available': prov.available,
+        'current_job': current_job
+    })
 
 # ---- (Future) Endpoint to push back job results ----
 
