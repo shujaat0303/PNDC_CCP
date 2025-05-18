@@ -217,14 +217,13 @@ def provider_logout(pid):
 def provider_status(pid):
     prov = HPCProvider.query.get_or_404(pid)
 
-    # Join Bid → CodeRequest, filter for accepted & still-scheduled,
-    # then pick the one with the highest request ID (i.e. most recent).
+    # Join Bid and CodeRequest; pick the latest accepted & scheduled
     job_entry = (
         db.session.query(Bid, CodeRequest)
         .join(CodeRequest, Bid.request_id == CodeRequest.id)
         .filter(
             Bid.provider_id == pid,
-            Bid.accepted    == True,
+            Bid.accepted == True,
             CodeRequest.status == 'SCHEDULED'
         )
         .order_by(CodeRequest.id.desc())
@@ -239,7 +238,8 @@ def provider_status(pid):
             'client_id':   req.client_id,
             'cores':       req.cores,
             'clock_speed': req.clock_speed,
-            'memory':      req.memory
+            'memory':      req.memory,
+            'code_text':   req.code_text  # include the submitted C code
         }
 
     return jsonify({

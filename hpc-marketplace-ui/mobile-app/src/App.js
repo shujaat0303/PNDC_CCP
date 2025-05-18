@@ -128,16 +128,33 @@ export default function App() {
         {view === 'jobs' && (
           <>
             {/* If busy and has a current_job, render that job info */}
+            
+
             {statusInfo && !statusInfo.available && statusInfo.current_job && (
               <div className="card">
                 <h3>Current Job</h3>
                 <p><strong>Job #{statusInfo.current_job.request_id}</strong></p>
                 <p>Client: {statusInfo.current_job.client_id}</p>
                 <p>Cores: {statusInfo.current_job.cores}</p>
-                <p>Clock Speed: {statusInfo.current_job.clock_speed} GHz</p>
-                <p>Memory: {statusInfo.current_job.memory} MB</p>
+                <p>Clock Speed: {statusInfo.current_job.clock_speed} GHz</p>
+                <p>Memory: {statusInfo.current_job.memory} MB</p>
+
+                {/* Show the submitted C code in a scrollable <pre> block */}
+                <div style={{ marginTop: '1rem' }}>
+                  <strong>Submitted Code:</strong>
+                  <pre style={{
+                    background: '#f0f0f0',
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {statusInfo.current_job.code_text}
+                  </pre>
+                </div>
               </div>
             )}
+
 
             {/* If available, show open jobs list */}
             {statusInfo && statusInfo.available && (
