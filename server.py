@@ -217,26 +217,36 @@ def provider_logout(pid):
 def provider_status(pid):
     prov = HPCProvider.query.get_or_404(pid)
 
-    # find the one request they've won & is SCHEDULED:
-    bid = Bid.query.filter_by(provider_id=pid, accepted=True).first()
+    # Join Bid → CodeRequest, filter for accepted & still-scheduled,
+    # then pick the one with the highest request ID (i.e. most recent).
+    job_entry = (
+        db.session.query(Bid, CodeRequest)
+        .join(CodeRequest, Bid.request_id == CodeRequest.id)
+        .filter(
+            Bid.provider_id == pid,
+            Bid.accepted    == True,
+            CodeRequest.status == 'SCHEDULED'
+        )
+        .order_by(CodeRequest.id.desc())
+        .first()
+    )
+
     current_job = None
-    if bid:
-        req = CodeRequest.query.get(bid.request_id)
-        if req and req.status == 'SCHEDULED':
-            current_job = {
-                'request_id': req.id,
-                'client_id': req.client_id,
-                'cores': req.cores,
-                'clock_speed': req.clock_speed,
-                'memory': req.memory
-            }
+    if job_entry:
+        _, req = job_entry  # unpack (Bid, CodeRequest)
+        current_job = {
+            'request_id':  req.id,
+            'client_id':   req.client_id,
+            'cores':       req.cores,
+            'clock_speed': req.clock_speed,
+            'memory':      req.memory
+        }
 
     return jsonify({
         'provider_id': pid,
-        'available': prov.available,
+        'available':   prov.available,
         'current_job': current_job
     })
-
 # ---- (Future) Endpoint to push back job results ----
 
 if __name__ == '__main__':

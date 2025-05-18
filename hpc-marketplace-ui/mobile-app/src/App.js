@@ -3,20 +3,21 @@ import { post, get } from './api';
 import './App.css';
 
 export default function App() {
-  const [view, setView]         = useState('login'); // 'login' | 'jobs'
-  const [provId, setProvId]       = useState('');
-  const [loggedIn, setLoggedIn]   = useState(false);
-  const [jobs, setJobs]         = useState([]);
-  const [errorMsg, setErrorMsg]   = useState('');
-  const [statusInfo, setStatusInfo] = useState(null);
+  const [view, setView]           = useState('login'); // 'login' | 'jobs'
+  const [provId, setProvId]         = useState('');
+  const [loggedIn, setLoggedIn]     = useState(false);
+  const [jobs, setJobs]           = useState([]);
+  const [errorMsg, setErrorMsg]     = useState('');
+  const [statusInfo, setStatusInfo]   = useState(null);
 
+  // ---- Login / Logout ----
   const login = async () => {
     await post('/login', { id: +provId, user_type: 'provider' });
     setLoggedIn(true);
     setView('jobs');
     setErrorMsg('');
     setStatusInfo(null);
-  };
+  };   
 
   const logout = () => {
     setLoggedIn(false);
@@ -27,14 +28,16 @@ export default function App() {
     setView('login');
   };
 
-  // Poll for jobs
+  // ---- Poll for jobs & status every 5s ----
   useEffect(() => {
     if (view !== 'jobs') return;
+
     const fetchJobs = async () => {
-      // 1) Always refresh provider status
       let info;
       try {
+        // 1) Fetch provider status
         info = await get(`/providers/${provId}/status`);
+        console.log('DEBUGGING-- Provider status:', info);
         setStatusInfo(info);
       } catch {
         setErrorMsg('Error fetching provider status.');
@@ -42,26 +45,25 @@ export default function App() {
         return;
       }
 
-      // 2) If available, fetch open jobs; otherwise clear jobs
+      // 2) If available → fetch open jobs
       if (info.available) {
         try {
           const openJobs = await get(`/providers/${provId}/requests`);
+          console.log('DEBUGGING-- Open jobs:', openJobs);
           setJobs(openJobs);
-          setErrorMsg('');
+          setErrorMsg(''); // clear any previous
         } catch {
           setErrorMsg('Error fetching jobs.');
           setJobs([]);
         }
+      } else if (info.current_job) {
+        // 3) If busy and has a current_job → show that instead of “unavailable”
+        setJobs([]);        // clear job list
+        setErrorMsg('');    // clear “unavailable” text
       } else {
-        // provider busy
+        // 4) Busy with no current_job (edge case)
         setJobs([]);
-        if (info.current_job) {
-          setErrorMsg(
-            `Busy with Job #${info.current_job.request_id} for Client ${info.current_job.client_id}.`
-          );
-        } else {
-          setErrorMsg('Provider unavailable.');
-        }
+        setErrorMsg('Provider unavailable.');
       }
     };
 
@@ -70,21 +72,27 @@ export default function App() {
     return () => clearInterval(iv);
   }, [view, provId]);
 
+  // ---- Place a bid ----
   const bid = async (rid) => {
     try {
-      await post(`/providers/${provId}/requests/${rid}/bids`, {
-        price: +prompt(`Your bid for request ${rid}`),
-      });
-      setErrorMsg('Bid placed ✓');
+      const price = +prompt(`Your bid for Job #${rid}`);
+      if (isNaN(price)) return;
+      await post(`/providers/${provId}/requests/${rid}/bids`, { price });
+      setErrorMsg('Bid placed successfully.');
     } catch {
-      const info = await get(`/providers/${provId}/status`);
-      setStatusInfo(info);
-      if (!info.available && info.current_job) {
-        setErrorMsg(
-          `Cannot bid: busy with Job #${info.current_job.request_id} for Client ${info.current_job.client_id}.`
-        );
-      } else {
-        setErrorMsg('Cannot bid: provider unavailable.');
+      // On error, refresh status and show message accordingly
+      try {
+        const info = await get(`/providers/${provId}/status`);
+        setStatusInfo(info);
+        if (!info.available && info.current_job) {
+          setErrorMsg(
+            `Cannot bid: busy with Job #${info.current_job.request_id} for Client ${info.current_job.client_id}.`
+          );
+        } else {
+          setErrorMsg('Cannot bid: provider unavailable.');
+        }
+      } catch {
+        setErrorMsg('Error fetching provider status.');
       }
     }
   };
@@ -93,7 +101,9 @@ export default function App() {
     <div className="app-container">
       <div className="header">HPC Bidding</div>
 
-      {errorMsg && <div className="error-banner">{errorMsg}</div>}
+      {errorMsg && (
+        <div className="error-banner">{errorMsg}</div>
+      )}
 
       <div className="content">
         {view === 'login' && (
@@ -117,26 +127,50 @@ export default function App() {
 
         {view === 'jobs' && (
           <>
-            {jobs.length === 0 && !errorMsg && (
+            {/* If busy and has a current_job, render that job info */}
+            {statusInfo && !statusInfo.available && statusInfo.current_job && (
+              <div className="card">
+                <h3>Current Job</h3>
+                <p><strong>Job #{statusInfo.current_job.request_id}</strong></p>
+                <p>Client: {statusInfo.current_job.client_id}</p>
+                <p>Cores: {statusInfo.current_job.cores}</p>
+                <p>Clock Speed: {statusInfo.current_job.clock_speed} GHz</p>
+                <p>Memory: {statusInfo.current_job.memory} MB</p>
+              </div>
+            )}
+
+            {/* If available, show open jobs list */}
+            {statusInfo && statusInfo.available && (
+              <>
+                {jobs.length === 0 && !errorMsg && (
+                  <p style={{ textAlign: 'center', color: '#666' }}>
+                    No jobs available.
+                  </p>
+                )}
+                {jobs.map(j => (
+                  <div key={j.request_id} className="card">
+                    <h3>Job #{j.request_id}</h3>
+                    <p>Client: {j.client_id}</p>
+                    <p>{j.cores} cores @ {j.clock_speed} GHz</p>
+                    <p>{j.memory} MB RAM</p>
+                    <button
+                      className="button"
+                      onClick={() => bid(j.request_id)}
+                      disabled={!statusInfo.available}
+                    >
+                      Place Bid
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* If busy but no current_job (rare), show unavailable */}
+            {statusInfo && !statusInfo.available && !statusInfo.current_job && (
               <p style={{ textAlign: 'center', color: '#666' }}>
-                No jobs available.
+                Provider unavailable.
               </p>
             )}
-            {jobs.map(j => (
-              <div key={j.request_id} className="card">
-                <h3>Job #{j.request_id}</h3>
-                <p>Client {j.client_id}</p>
-                <p>{j.cores} cores @ {j.clock_speed}GHz</p>
-                <p>{j.memory} MB RAM</p>
-                <button
-                  className="button"
-                  onClick={() => bid(j.request_id)}
-                  disabled={statusInfo && !statusInfo.available}
-                >
-                  Place Bid
-                </button>
-              </div>
-            ))}
           </>
         )}
       </div>
